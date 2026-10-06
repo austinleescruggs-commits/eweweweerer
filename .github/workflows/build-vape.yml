@@ -30,48 +30,56 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           p = Path("src/main/java/gg/vape/fabric/VaporFabricClient.java")
           s = p.read_text(encoding="utf-8")
-          replacements = {
-              "net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper":
-                  "net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper",
-              "KeyMappingHelper.registerKeyMapping(":
-                  "KeyBindingHelper.registerKeyBinding(",
-              "RenderSystem.getModelViewMatrixCopy()":
-                  "new org.joml.Matrix4f()",
-              "client.gui.setScreen(activeGuiScreen)":
-                  "client.setScreen(activeGuiScreen)",
-              "net.minecraft.client.gui.GuiGraphicsExtractor":
-                  "net.minecraft.client.gui.GuiGraphics",
-              "GuiGraphicsExtractor":
-                  "GuiGraphics",
-          }
-          for a, b in replacements.items():
-              s = s.replace(a, b)
 
-          s = re.sub(
-              r'(?m)^(\s*)@Override\s*\n(\s*public void extractBackground\(GuiGraphics )',
-              r'\2',
-              s,
-              count=1
+          # Fabric API package/method
+          s = s.replace(
+              "net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper",
+              "net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper"
           )
+          s = s.replace(
+              "KeyMappingHelper.registerKeyMapping(",
+              "KeyBindingHelper.registerKeyBinding("
+          )
+
+          # Minecraft 1.21.11 Screen API
+          s = s.replace(
+              "client.gui.setScreen(activeGuiScreen)",
+              "client.setScreen(activeGuiScreen)"
+          )
+
+          # The upstream 1.21.11 official mappings use GuiGraphicsExtractor.
+          s = s.replace(
+              "net.minecraft.client.gui.GuiGraphics",
+              "net.minecraft.client.gui.GuiGraphicsExtractor"
+          )
+          s = s.replace(
+              "GuiGraphics graphics",
+              "GuiGraphicsExtractor graphics"
+          )
+
+          # Screen.extractBackground is not an override in this mappings revision.
+          marker = "        @Override\n        public void extractBackground(GuiGraphicsExtractor graphics"
+          s = s.replace(marker, "        public void extractBackground(GuiGraphicsExtractor graphics")
+
+          # RenderSystem.getModelViewMatrixCopy() was removed.  The recovered
+          # render callback only needs a matrix object for its legacy bridge.
+          s = s.replace(
+              "RenderSystem.getModelViewMatrixCopy()",
+              "new org.joml.Matrix4f()"
+          )
+
           p.write_text(s, encoding="utf-8")
 
-          g = Path("build.gradle")
-          gs = g.read_text(encoding="utf-8")
-          dep = 'modImplementation "net.fabricmc.fabric-api:fabric-api:0.141.6+1.21.11"'
-          if dep not in gs:
-              if re.search(r"dependencies\s*\{", gs):
-                  gs = re.sub(r"(dependencies\s*\{)", r"\1\n    " + dep, gs, count=1)
-              else:
-                  gs += "\n\ndependencies {\n    " + dep + "\n}\n"
-          g.write_text(gs, encoding="utf-8")
-          PY
+          print("Patched VaporFabricClient.java")
+          for i, line in enumerate(s.splitlines(), 1):
+              if any(x in line for x in ["KeyBindingHelper", "GuiGraphicsExtractor", "new org.joml.Matrix4f()", "client.setScreen"]):
+                  print(f"{i}: {line}")
 
-          echo "---- Patched API references ----"
-          grep -nE "KeyBindingHelper|GuiGraphics|Matrix4f|setScreen" src/main/java/gg/vape/fabric/VaporFabricClient.java | head -80
+          # Keep the source project's already-correct Fabric API dependency.
+          PY
 
       - name: Build Vapor Fabric 1.21.11
         working-directory: vapor-source/vapor421-1.21.11-port
@@ -83,5 +91,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vapor421-fabric-4.21.0
-          path: vapor-source/vapor421-1.21.11-port/build/libs/vapor421-fabric-4.21.0.jar
+          path: vapor-source/vapor421-1.21.11-port/build/libs/Vapor-FabricMC1.21.11_v4.21.jar
           if-no-files-found: error
