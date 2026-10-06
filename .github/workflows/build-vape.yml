@@ -24,6 +24,57 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Patch 1.21.11 compatibility
+        working-directory: vapor-source/vapor421-1.21.11-port
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("src/main/java/gg/vape/fabric/VaporFabricClient.java")
+          s = p.read_text(encoding="utf-8")
+          s = s.replace(
+              "net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper",
+              "net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper"
+          )
+          s = s.replace(
+              "RenderSystem.getModelViewMatrixCopy()",
+              "new org.joml.Matrix4f()"
+          )
+          s = s.replace(
+              "client.gui.setScreen(activeGuiScreen)",
+              "client.setScreen(activeGuiScreen)"
+          )
+          s = s.replace(
+              "net.minecraft.client.gui.GuiGraphicsExtractor",
+              "net.minecraft.client.gui.DrawContext"
+          )
+          # 1.21.11 Screen does not expose the extractor override used by
+          # the original port; keep the helper method but remove only its
+          # invalid override annotation.
+          s = re.sub(
+              r'(\s*)@Override(\s+public void extractBackground\(DrawContext )',
+              r'\1\2',
+              s,
+              count=1
+          )
+          p.write_text(s, encoding="utf-8")
+
+          g = Path("build.gradle")
+          gs = g.read_text(encoding="utf-8")
+          dep = 'modImplementation "net.fabricmc.fabric-api:fabric-api:0.141.6+1.21.11"'
+          if dep not in gs:
+              if re.search(r"dependencies\s*\{", gs):
+                  gs = re.sub(r"(dependencies\s*\{)", r"\1\n    " + dep, gs, count=1)
+              else:
+                  gs += "\n\ndependencies {\n    " + dep + "\n}\n"
+          g.write_text(gs, encoding="utf-8")
+          PY
+
+          echo "---- Patched API references ----"
+          grep -nE "KeyBindingHelper|DrawContext|Matrix4f|setScreen" src/main/java/gg/vape/fabric/VaporFabricClient.java | head -50
+
       - name: Build Vapor Fabric 1.21.11
         working-directory: vapor-source/vapor421-1.21.11-port
         run: |
