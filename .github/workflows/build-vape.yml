@@ -31,10 +31,9 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path("src/main/java/gg/vape/fabric/VaporFabricClient.java")
-          s = p.read_text(encoding="utf-8")
+          fabric_client = Path("src/main/java/gg/vape/fabric/VaporFabricClient.java")
+          s = fabric_client.read_text(encoding="utf-8")
 
-          # Fabric API package/method
           s = s.replace(
               "net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper",
               "net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper"
@@ -43,43 +42,38 @@ jobs:
               "KeyMappingHelper.registerKeyMapping(",
               "KeyBindingHelper.registerKeyBinding("
           )
-
-          # Minecraft 1.21.11 Screen API
           s = s.replace(
               "client.gui.setScreen(activeGuiScreen)",
               "client.setScreen(activeGuiScreen)"
           )
-
-          # The upstream 1.21.11 official mappings use GuiGraphicsExtractor.
-          s = s.replace(
-              "net.minecraft.client.gui.GuiGraphics",
-              "net.minecraft.client.gui.GuiGraphicsExtractor"
-          )
-          s = s.replace(
-              "GuiGraphics graphics",
-              "GuiGraphicsExtractor graphics"
-          )
-
-          # Screen.extractBackground is not an override in this mappings revision.
-          marker = "        @Override\n        public void extractBackground(GuiGraphicsExtractor graphics"
-          s = s.replace(marker, "        public void extractBackground(GuiGraphicsExtractor graphics")
-
-          # RenderSystem.getModelViewMatrixCopy() was removed.  The recovered
-          # render callback only needs a matrix object for its legacy bridge.
           s = s.replace(
               "RenderSystem.getModelViewMatrixCopy()",
               "new org.joml.Matrix4f()"
           )
+          fabric_client.write_text(s, encoding="utf-8")
 
-          p.write_text(s, encoding="utf-8")
+          mixin = Path("src/main/java/gg/vape/fabric/mixin/MinecraftMixin.java")
+          ms = mixin.read_text(encoding="utf-8")
+          old = '''    @Inject(method = "pick", at = @At("TAIL"))
+    private void vapor421$afterPick(float partialTick, CallbackInfo callbackInfo) {
+        if (!VaporFabricClient.isReady()) return;
+        new EventMouseOverUpdate(partialTick).fire();
+    }'''
+          new = '''    @Inject(method = "tick", at = @At("TAIL"))
+    private void vapor421$afterClientTick(CallbackInfo callbackInfo) {
+        if (!VaporFabricClient.isReady()) return;
+        new EventMouseOverUpdate(0.0F).fire();
+    }'''
+          if old not in ms:
+              raise SystemExit("Expected stale pick() injection was not found")
+          ms = ms.replace(old, new)
+          mixin.write_text(ms, encoding="utf-8")
 
-          print("Patched VaporFabricClient.java")
-          for i, line in enumerate(s.splitlines(), 1):
-              if any(x in line for x in ["KeyBindingHelper", "GuiGraphicsExtractor", "new org.joml.Matrix4f()", "client.setScreen"]):
-                  print(f"{i}: {line}")
-
-          # Keep the source project's already-correct Fabric API dependency.
+          print("Fixed MinecraftMixin: pick() -> tick()")
           PY
+
+          grep -nE 'KeyBindingHelper|setScreen|Matrix4f' src/main/java/gg/vape/fabric/VaporFabricClient.java
+          grep -nE 'afterClientTick|@Inject\(method = "tick"' src/main/java/gg/vape/fabric/mixin/MinecraftMixin.java
 
       - name: Build Vapor Fabric 1.21.11
         working-directory: vapor-source/vapor421-1.21.11-port
@@ -90,6 +84,6 @@ jobs:
       - name: Upload Vapor Fabric jar
         uses: actions/upload-artifact@v4
         with:
-          name: vapor421-fabric-4.21.0
+          name: vapor421-fabric-4.21.0-fixed
           path: vapor-source/vapor421-1.21.11-port/build/libs/Vapor-FabricMC1.21.11_v4.21.jar
           if-no-files-found: error
