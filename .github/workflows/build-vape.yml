@@ -34,28 +34,26 @@ jobs:
 
           p = Path("src/main/java/gg/vape/fabric/VaporFabricClient.java")
           s = p.read_text(encoding="utf-8")
-          s = s.replace(
-              "net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper",
-              "net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper"
-          )
-          s = s.replace(
-              "RenderSystem.getModelViewMatrixCopy()",
-              "new org.joml.Matrix4f()"
-          )
-          s = s.replace(
-              "client.gui.setScreen(activeGuiScreen)",
-              "client.setScreen(activeGuiScreen)"
-          )
-          s = s.replace(
-              "net.minecraft.client.gui.GuiGraphicsExtractor",
-              "net.minecraft.client.gui.DrawContext"
-          )
-          # 1.21.11 Screen does not expose the extractor override used by
-          # the original port; keep the helper method but remove only its
-          # invalid override annotation.
+          replacements = {
+              "net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper":
+                  "net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper",
+              "KeyMappingHelper.registerKeyMapping(":
+                  "KeyBindingHelper.registerKeyBinding(",
+              "RenderSystem.getModelViewMatrixCopy()":
+                  "new org.joml.Matrix4f()",
+              "client.gui.setScreen(activeGuiScreen)":
+                  "client.setScreen(activeGuiScreen)",
+              "net.minecraft.client.gui.GuiGraphicsExtractor":
+                  "net.minecraft.client.gui.GuiGraphics",
+              "GuiGraphicsExtractor":
+                  "GuiGraphics",
+          }
+          for a, b in replacements.items():
+              s = s.replace(a, b)
+
           s = re.sub(
-              r'(\s*)@Override(\s+public void extractBackground\(DrawContext )',
-              r'\1\2',
+              r'(?m)^(\s*)@Override\s*\n(\s*public void extractBackground\(GuiGraphics )',
+              r'\2',
               s,
               count=1
           )
@@ -73,7 +71,7 @@ jobs:
           PY
 
           echo "---- Patched API references ----"
-          grep -nE "KeyBindingHelper|DrawContext|Matrix4f|setScreen" src/main/java/gg/vape/fabric/VaporFabricClient.java | head -50
+          grep -nE "KeyBindingHelper|GuiGraphics|Matrix4f|setScreen" src/main/java/gg/vape/fabric/VaporFabricClient.java | head -80
 
       - name: Build Vapor Fabric 1.21.11
         working-directory: vapor-source/vapor421-1.21.11-port
